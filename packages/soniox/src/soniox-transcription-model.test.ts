@@ -66,12 +66,14 @@ describe('doGenerate', () => {
             start_ms: 10,
             end_ms: 90,
             confidence: 0.95,
+            language: 'en',
           },
           {
             text: 'lo',
             start_ms: 110,
             end_ms: 160,
             confidence: 0.98,
+            language: 'en',
           },
         ],
       },
@@ -143,7 +145,7 @@ describe('doGenerate', () => {
     });
   });
 
-  it('should map segments and provider metadata', async () => {
+  it('should map segments, language, and provider metadata', async () => {
     prepareJsonResponse();
 
     const result = await model.doGenerate({
@@ -153,6 +155,7 @@ describe('doGenerate', () => {
 
     expect(result.text).toBe('Hello');
     expect(result.durationInSeconds).toBeCloseTo(16.079);
+    expect(result.language).toBe('en');
     expect(result.segments).toEqual([
       {
         text: 'Hel',

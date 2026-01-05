@@ -1,4 +1,8 @@
-import { SharedV3Warning, TranscriptionModelV3 } from '@ai-sdk/provider';
+import {
+  AISDKError,
+  SharedV3Warning,
+  TranscriptionModelV3,
+} from '@ai-sdk/provider';
 import {
   combineHeaders,
   convertBase64ToUint8Array,
@@ -132,6 +136,30 @@ export class SonioxTranscriptionModel implements TranscriptionModelV3 {
       }));
   }
 
+  private getLanguageFromTokens(
+    tokens: SonioxTranscriptToken[] | null | undefined,
+  ) {
+    if (!tokens) return undefined;
+
+    const counts = new Map<string, number>();
+    for (const token of tokens) {
+      const language = token.language ?? undefined;
+      if (!language) continue;
+      counts.set(language, (counts.get(language) ?? 0) + 1);
+    }
+
+    let bestLanguage: string | undefined;
+    let bestCount = 0;
+    for (const [language, count] of counts) {
+      if (count > bestCount) {
+        bestLanguage = language;
+        bestCount = count;
+      }
+    }
+
+    return bestLanguage;
+  }
+
   async doGenerate(
     options: Parameters<TranscriptionModelV3['doGenerate']>[0],
   ): Promise<Awaited<ReturnType<TranscriptionModelV3['doGenerate']>>> {
@@ -251,9 +279,11 @@ export class SonioxTranscriptionModel implements TranscriptionModelV3 {
       }
 
       if (statusResponse.status === 'error') {
-        throw new Error(
-          `Transcription failed: ${statusResponse.error_message ?? 'Unknown error'}`,
-        );
+        throw new AISDKError({
+          message: `Transcription failed: ${statusResponse.error_message ?? 'Unknown error'}`,
+          name: 'TranscriptionJobFailed',
+          cause: statusResponse,
+        });
       }
 
       await delay(pollingInterval);
@@ -279,11 +309,12 @@ export class SonioxTranscriptionModel implements TranscriptionModelV3 {
 
     const tokens = transcriptResponse.tokens ?? [];
     const segments = this.buildSegments(tokens);
+    const language = this.getLanguageFromTokens(tokens);
 
     return {
       text: transcriptResponse.text ?? '',
       segments,
-      language: undefined,
+      language,
       durationInSeconds:
         typeof statusResponse.audio_duration_ms === 'number'
           ? statusResponse.audio_duration_ms / 1000
