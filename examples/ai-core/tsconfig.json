@@ -114,6 +114,9 @@
     },
     {
       "path": "../../packages/xai"
+    },
+    {
+      "path": "../../packages/soniox"
     }
   ]
 }

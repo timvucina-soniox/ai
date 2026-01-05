@@ -1,0 +1,175 @@
+---
+title: Soniox
+description: Learn how to use the Soniox provider for the AI SDK.
+---
+
+# Soniox Provider
+
+The [Soniox](https://soniox.com/) provider contains transcription model support for the Soniox transcription API.
+
+## Setup
+
+The Soniox provider is available in the `@ai-sdk/soniox` module. You can install it with
+
+<Tabs items={['pnpm', 'npm', 'yarn', 'bun']}>
+  <Tab>
+    <Snippet text="pnpm add @ai-sdk/soniox" dark />
+  </Tab>
+  <Tab>
+    <Snippet text="npm install @ai-sdk/soniox" dark />
+  </Tab>
+  <Tab>
+    <Snippet text="yarn add @ai-sdk/soniox" dark />
+  </Tab>
+
+  <Tab>
+    <Snippet text="bun add @ai-sdk/soniox" dark />
+  </Tab>
+</Tabs>
+
+## Provider Instance
+
+You can import the default provider instance `soniox` from `@ai-sdk/soniox`:
+
+```ts
+import { soniox } from '@ai-sdk/soniox';
+```
+
+If you need a customized setup, you can import `createSoniox` from `@ai-sdk/soniox` and create a provider instance with your settings:
+
+```ts
+import { createSoniox } from '@ai-sdk/soniox';
+
+const soniox = createSoniox({
+  // custom settings, e.g.
+  fetch: customFetch,
+});
+```
+
+You can use the following optional settings to customize the Soniox provider instance:
+
+- **apiKey** _string_
+
+  API key that is being sent using the `Authorization` header.
+  It defaults to the `SONIOX_API_KEY` environment variable.
+
+- **headers** _Record&lt;string,string&gt;_
+
+  Custom headers to include in the requests.
+
+- **fetch** _(input: RequestInfo, init?: RequestInit) => Promise&lt;Response&gt;_
+
+  Custom [fetch](https://developer.mozilla.org/en-US/docs/Web/API/fetch) implementation.
+  Defaults to the global `fetch` function.
+  You can use it as a middleware to intercept requests,
+  or to provide a custom fetch implementation for e.g. testing.
+
+- **pollingIntervalMs** _number_
+
+  Polling interval in milliseconds for async transcription status checks.
+
+## Transcription Models
+
+You can create models that call the Soniox transcription API using the `.transcription()` factory method.
+
+The first argument is the model id e.g. `stt-async-v3`.
+
+```ts
+const model = soniox.transcription('stt-async-v3');
+```
+
+### Example
+
+```ts
+import { experimental_transcribe as transcribe } from 'ai';
+import { soniox } from '@ai-sdk/soniox';
+import { readFile } from 'fs/promises';
+
+const result = await transcribe({
+  model: soniox.transcription('stt-async-v3'),
+  audio: await readFile('audio.mp3'),
+});
+```
+
+### Transcription from URL
+
+To skip uploading audio bytes and use a public URL instead, pass `providerOptions.soniox.audioUrl`:
+
+```ts
+import { experimental_transcribe as transcribe } from 'ai';
+import { soniox } from '@ai-sdk/soniox';
+
+const result = await transcribe({
+  model: soniox.transcription('stt-async-v3'),
+  // audio is required by the SDK but ignored when audioUrl is provided
+  audio: new Uint8Array(),
+  providerOptions: {
+    soniox: {
+      audioUrl: 'https://soniox.com/media/examples/coffee_shop.mp3',
+    },
+  },
+});
+```
+
+The following provider options are available:
+
+- **audioUrl** _string_
+
+  Public URL of the audio file to transcribe. When set, the SDK will skip
+  uploading the audio bytes and use this URL instead.
+
+- **fileId** _string_
+
+  File ID of a previously uploaded file.
+
+- **languageHints** _string[]_
+
+  Language hints to improve recognition.
+
+- **enableLanguageIdentification** _boolean_
+
+  Whether to enable automatic language identification.
+
+- **enableSpeakerDiarization** _boolean_
+
+  Whether to enable speaker diarization.
+
+- **context** _string | object_
+
+  Additional transcription context to improve accuracy. For object syntax, see
+  the Soniox context documentation.
+
+- **clientReferenceId** _string_
+
+  Optional client-defined reference ID for the transcription.
+
+- **webhookUrl** _string_
+
+  Webhook URL for transcription completion notifications.
+
+- **webhookAuthHeaderName** _string_
+
+  Webhook authentication header name.
+
+- **webhookAuthHeaderValue** _string_
+
+  Webhook authentication header value.
+
+- **translation** _object_
+
+  Translation configuration. Supported shapes:
+  - `{ type: 'one_way', targetLanguage: string }`
+  - `{ type: 'two_way', languageA: string, languageB: string }`
+
+### Provider Metadata
+
+Soniox tokens are exposed via `providerMetadata.soniox.tokens` to access per-token timestamps and confidence.
+
+```ts
+const result = await transcribe({
+  model: soniox.transcription('stt-async-v3'),
+  audio: await readFile('audio.mp3'),
+});
+
+const tokens = result.providerMetadata?.soniox?.tokens;
+```
