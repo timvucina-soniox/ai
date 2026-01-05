@@ -161,6 +161,28 @@ The following provider options are available:
   - `{ type: 'one_way', targetLanguage: string }`
   - `{ type: 'two_way', languageA: string, languageB: string }`
 
+### Translation Notes
+
+When translation is enabled, tokens include `translation_status` and language fields.
+Use `providerMetadata.soniox.tokens` to distinguish original vs translated spans.
+
+```ts
+const result = await transcribe({
+  model: soniox.transcription('stt-async-v3'),
+  audio: await readFile('audio.mp3'),
+  providerOptions: {
+    soniox: {
+      translation: { type: 'one_way', targetLanguage: 'es' },
+    },
+  },
+});
+
+const tokens = result.providerMetadata?.soniox?.tokens ?? [];
+const translated = tokens.filter(
+  token => token.translation_status === 'translation',
+);
+```
+
 ### Provider Metadata
 
 Soniox tokens are exposed via `providerMetadata.soniox.tokens` to access per-token timestamps and confidence.
