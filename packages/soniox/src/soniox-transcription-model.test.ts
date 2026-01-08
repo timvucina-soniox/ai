@@ -85,7 +85,7 @@ describe('doGenerate', () => {
     };
   }
 
-  it('should upload audio when no audioUrl is provided', async () => {
+  it('should upload audio for transcription', async () => {
     prepareJsonResponse();
 
     await model.doGenerate({
@@ -129,25 +129,15 @@ describe('doGenerate', () => {
     );
   });
 
-  it('should use audioUrl when provided', async () => {
+  it('should upload audio before creating a transcription', async () => {
     prepareJsonResponse();
 
     await model.doGenerate({
       audio: audioData,
       mediaType: 'audio/wav',
-      providerOptions: {
-        soniox: {
-          audioUrl: 'https://soniox.com/media/examples/coffee_shop.mp3',
-        },
-      },
     });
 
-    expect(server.calls[0].requestUrl).toBe(
-      'https://api.soniox.com/v1/transcriptions',
-    );
-    expect(await server.calls[0].requestBodyJson).toMatchObject({
-      audio_url: 'https://soniox.com/media/examples/coffee_shop.mp3',
-    });
+    expect(server.calls[0].requestUrl).toBe('https://api.soniox.com/v1/files');
   });
 
   it('should map segments, language, and provider metadata', async () => {

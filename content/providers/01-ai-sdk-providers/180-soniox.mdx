@@ -53,6 +53,10 @@ You can use the following optional settings to customize the Soniox provider ins
   API key that is being sent using the `Authorization` header.
   It defaults to the `SONIOX_API_KEY` environment variable.
 
+- **apiBaseUrl** _string_
+
+  Base URL for Soniox API requests. Defaults to `https://api.soniox.com`.
+
 - **headers** _Record&lt;string,string&gt;_
 
   Custom headers to include in the requests.
@@ -78,6 +82,9 @@ The first argument is the model id e.g. `stt-async-v3`.
 const model = soniox.transcription('stt-async-v3');
 ```
 
+The SDK uploads the audio to Soniox for each request and cleans up the
+transcription and file after the transcript is fetched.
+
 ### Example
 
 ```ts
@@ -91,36 +98,7 @@ const result = await transcribe({
 });
 ```
 
-### Transcription from URL
-
-To skip uploading audio bytes and use a public URL instead, pass `providerOptions.soniox.audioUrl`:
-
-```ts
-import { experimental_transcribe as transcribe } from 'ai';
-import { soniox } from '@ai-sdk/soniox';
-
-const result = await transcribe({
-  model: soniox.transcription('stt-async-v3'),
-  // audio is required by the SDK but ignored when audioUrl is provided
-  audio: new Uint8Array(),
-  providerOptions: {
-    soniox: {
-      audioUrl: 'https://soniox.com/media/examples/coffee_shop.mp3',
-    },
-  },
-});
-```
-
 The following provider options are available:
-
-- **audioUrl** _string_
-
-  Public URL of the audio file to transcribe. When set, the SDK will skip
-  uploading the audio bytes and use this URL instead.
-
-- **fileId** _string_
-
-  File ID of a previously uploaded file.
 
 - **languageHints** _string[]_
 
@@ -160,16 +138,6 @@ The following provider options are available:
   Translation configuration. Supported shapes:
   - `{ type: 'one_way', targetLanguage: string }`
   - `{ type: 'two_way', languageA: string, languageB: string }`
-
-- **autoDeleteTranscription** _boolean_
-
-  Whether to delete the transcription after the transcript is fetched or fails.
-  Defaults to `true`. Cleanup is best-effort; failures add a warning.
-
-- **autoDeleteFile** _boolean_
-
-  Whether to delete the associated file after transcription completes or fails.
-  Defaults to `true`. If you pass `fileId`, that file will be deleted too.
 
 ### Translation Notes
 

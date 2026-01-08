@@ -39,15 +39,6 @@ const sonioxTranslationSchema = z.discriminatedUnion('type', [
 
 export const sonioxTranscriptionProviderOptionsSchema = z.object({
   /**
-   * Public URL of the audio file to transcribe. When set, the SDK will skip
-   * uploading the audio bytes and use this URL instead.
-   */
-  audioUrl: z.string().nullish(),
-  /**
-   * File ID of a previously uploaded file.
-   */
-  fileId: z.string().nullish(),
-  /**
    * Language hints to improve recognition.
    */
   languageHints: z.array(z.string()).nullish(),
@@ -83,16 +74,6 @@ export const sonioxTranscriptionProviderOptionsSchema = z.object({
    * Translation configuration for the transcription.
    */
   translation: sonioxTranslationSchema.nullish(),
-  /**
-   * Whether to delete the transcription after the transcript is fetched or fails.
-   * Defaults to true.
-   */
-  autoDeleteTranscription: z.boolean().nullish().default(true),
-  /**
-   * Whether to delete the file associated with this transcription.
-   * Defaults to true. If a `fileId` is provided, that file will be deleted too.
-   */
-  autoDeleteFile: z.boolean().nullish().default(true),
 });
 
 export type SonioxTranscriptionProviderOptions = z.infer<

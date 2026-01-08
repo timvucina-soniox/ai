@@ -14,7 +14,7 @@ import { VERSION } from './version';
 
 export interface SonioxProvider extends ProviderV3 {
   (
-    modelId: 'stt-async-v3',
+    modelId: string,
     settings?: {},
   ): {
     transcription: SonioxTranscriptionModel;
@@ -36,6 +36,11 @@ export interface SonioxProviderSettings {
 API key for authenticating requests.
      */
   apiKey?: string;
+
+  /**
+Base URL for Soniox API requests.
+   */
+  apiBaseUrl?: string;
 
   /**
 Custom headers to include in the requests.
@@ -73,10 +78,12 @@ export function createSoniox(
       `ai-sdk/soniox/${VERSION}`,
     );
 
+  const apiBaseUrl = options.apiBaseUrl ?? 'https://api.soniox.com';
+
   const createTranscriptionModel = (modelId: SonioxTranscriptionModelId) =>
     new SonioxTranscriptionModel(modelId, {
       provider: `soniox.transcription`,
-      url: ({ path }) => `https://api.soniox.com${path}`,
+      url: ({ path }) => new URL(path, apiBaseUrl).toString(),
       headers: getHeaders,
       fetch: options.fetch,
       pollingIntervalMs: options.pollingIntervalMs,
@@ -101,12 +108,20 @@ export function createSoniox(
   };
 
   provider.embeddingModel = (modelId: string) => {
-    throw new NoSuchModelError({ modelId, modelType: 'embeddingModel' });
+    throw new NoSuchModelError({
+      modelId,
+      modelType: 'embeddingModel',
+      message: 'Soniox does not provide embedding models',
+    });
   };
   provider.textEmbeddingModel = provider.embeddingModel;
 
   provider.imageModel = (modelId: string) => {
-    throw new NoSuchModelError({ modelId, modelType: 'imageModel' });
+    throw new NoSuchModelError({
+      modelId,
+      modelType: 'imageModel',
+      message: 'Soniox does not provide image models',
+    });
   };
 
   return provider as SonioxProvider;

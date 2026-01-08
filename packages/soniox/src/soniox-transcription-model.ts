@@ -123,6 +123,8 @@ export class SonioxTranscriptionModel implements TranscriptionModelV3 {
   private buildSegments(tokens: SonioxTranscriptToken[] | null | undefined) {
     if (!tokens) return [];
 
+    // Soniox tokens that are trasncription tokens will always have start_ms and end_ms
+    // But translation tokens we want to skip here. And are exposed in providerMetadata.soniox.tokens
     return tokens
       .filter(
         token =>
@@ -136,6 +138,7 @@ export class SonioxTranscriptionModel implements TranscriptionModelV3 {
       }));
   }
 
+  // Soniox returns language for each token, so we need to find the most common language
   private getLanguageFromTokens(
     tokens: SonioxTranscriptToken[] | null | undefined,
   ) {
@@ -219,17 +222,7 @@ export class SonioxTranscriptionModel implements TranscriptionModelV3 {
       schema: sonioxTranscriptionProviderOptionsSchema,
     });
 
-    const audioUrl = sonioxOptions?.audioUrl ?? undefined;
-    const fileIdOverride = sonioxOptions?.fileId ?? undefined;
-    const autoDeleteTranscription =
-      sonioxOptions?.autoDeleteTranscription ?? true;
-    const autoDeleteFile = sonioxOptions?.autoDeleteFile ?? true;
-
-    if (audioUrl && fileIdOverride) {
-      throw new Error('Provide either audioUrl or fileId, not both.');
-    }
-
-    let fileId = fileIdOverride;
+    let fileId: string | undefined;
     let transcriptionId: string | undefined;
     const requestHeaders = combineHeaders(
       this.config.headers(),
@@ -237,43 +230,40 @@ export class SonioxTranscriptionModel implements TranscriptionModelV3 {
     );
 
     try {
-      if (!audioUrl && !fileId) {
-        const blob =
-          options.audio instanceof Uint8Array
-            ? new Blob([options.audio as BlobPart])
-            : new Blob([convertBase64ToUint8Array(options.audio) as BlobPart]);
+      const blob =
+        options.audio instanceof Uint8Array
+          ? new Blob([options.audio as BlobPart])
+          : new Blob([convertBase64ToUint8Array(options.audio) as BlobPart]);
 
-        const fileExtension = mediaTypeToExtension(options.mediaType);
-        const formData = new FormData();
-        formData.append(
-          'file',
-          new File([blob], `audio.${fileExtension}`, {
-            type: options.mediaType,
-          }),
-        );
+      const fileExtension = mediaTypeToExtension(options.mediaType);
+      const formData = new FormData();
+      formData.append(
+        'file',
+        new File([blob], `audio.${fileExtension}`, {
+          type: options.mediaType,
+        }),
+      );
 
-        const { value: uploadResponse } = await postFormDataToApi({
-          url: this.config.url({
-            path: '/v1/files',
-            modelId: this.modelId,
-          }),
-          headers: requestHeaders,
-          formData,
-          failedResponseHandler: sonioxFailedResponseHandler,
-          successfulResponseHandler: createJsonResponseHandler(
-            sonioxUploadResponseSchema,
-          ),
-          abortSignal: options.abortSignal,
-          fetch: this.config.fetch,
-        });
+      const { value: uploadResponse } = await postFormDataToApi({
+        url: this.config.url({
+          path: '/v1/files',
+          modelId: this.modelId,
+        }),
+        headers: requestHeaders,
+        formData,
+        failedResponseHandler: sonioxFailedResponseHandler,
+        successfulResponseHandler: createJsonResponseHandler(
+          sonioxUploadResponseSchema,
+        ),
+        abortSignal: options.abortSignal,
+        fetch: this.config.fetch,
+      });
 
-        fileId = uploadResponse.id;
-      }
+      fileId = uploadResponse.id;
 
       const body: SonioxCreateTranscriptionRequest = {
         model: this.modelId,
-        audio_url: audioUrl ?? undefined,
-        file_id: fileId ?? undefined,
+        file_id: fileId,
         language_hints: sonioxOptions?.languageHints ?? undefined,
         enable_language_identification:
           sonioxOptions?.enableLanguageIdentification ?? undefined,
@@ -308,12 +298,22 @@ export class SonioxTranscriptionModel implements TranscriptionModelV3 {
 
       const pollingInterval =
         this.config.pollingIntervalMs ?? this.POLLING_INTERVAL_MS;
+      const timeoutMs = 3 * 60 * 1000;
+      const startTime = Date.now();
 
-      let statusResponse: z.infer<
-        typeof sonioxTranscriptionStatusResponseSchema
-      >;
+      let statusResponse:
+        | z.infer<typeof sonioxTranscriptionStatusResponseSchema>
+        | undefined;
 
       while (true) {
+        if (Date.now() - startTime > timeoutMs) {
+          throw new AISDKError({
+            message: 'Transcription job polling timed out',
+            name: 'TranscriptionJobPollingTimedOut',
+            cause: statusResponse,
+          });
+        }
+
         if (options.abortSignal?.aborted) {
           throw new Error('Transcription request was aborted');
         }
@@ -393,7 +393,7 @@ export class SonioxTranscriptionModel implements TranscriptionModelV3 {
         },
       };
     } finally {
-      if (autoDeleteTranscription && transcriptionId) {
+      if (transcriptionId) {
         await this.tryDeleteResource({
           path: `/v1/transcriptions/${transcriptionId}`,
           headers: requestHeaders,
@@ -402,7 +402,7 @@ export class SonioxTranscriptionModel implements TranscriptionModelV3 {
         });
       }
 
-      if (autoDeleteFile && fileId) {
+      if (fileId) {
         await this.tryDeleteResource({
           path: `/v1/files/${fileId}`,
           headers: requestHeaders,

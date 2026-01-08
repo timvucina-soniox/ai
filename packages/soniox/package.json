@@ -22,7 +22,8 @@
     "test:watch": "vitest --config vitest.node.config.js",
     "test:edge": "vitest --config vitest.edge.config.js --run",
     "test:node": "vitest --config vitest.node.config.js --run",
-    "test:node:watch": "vitest --config vitest.node.config.js --watch"
+    "test:node:watch": "vitest --config vitest.node.config.js --watch",
+    "transcribe": "node test/soniox-transcribe.mjs"
   },
   "exports": {
     "./package.json": "./package.json",
@@ -34,7 +35,8 @@
   },
   "dependencies": {
     "@ai-sdk/provider": "workspace:*",
-    "@ai-sdk/provider-utils": "workspace:*"
+    "@ai-sdk/provider-utils": "workspace:*",
+    "ai": "workspace:*"
   },
   "devDependencies": {
     "@ai-sdk/test-server": "workspace:*",
