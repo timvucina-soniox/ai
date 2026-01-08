@@ -161,6 +161,16 @@ The following provider options are available:
   - `{ type: 'one_way', targetLanguage: string }`
   - `{ type: 'two_way', languageA: string, languageB: string }`
 
+- **autoDeleteTranscription** _boolean_
+
+  Whether to delete the transcription after the transcript is fetched or fails.
+  Defaults to `true`. Cleanup is best-effort; failures add a warning.
+
+- **autoDeleteFile** _boolean_
+
+  Whether to delete the associated file after transcription completes or fails.
+  Defaults to `true`. If you pass `fileId`, that file will be deleted too.
+
 ### Translation Notes
 
 When translation is enabled, tokens include `translation_status` and language fields.

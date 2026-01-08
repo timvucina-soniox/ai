@@ -160,6 +160,53 @@ export class SonioxTranscriptionModel implements TranscriptionModelV3 {
     return bestLanguage;
   }
 
+  private async tryDeleteResource({
+    path,
+    headers,
+    warnings,
+    description,
+  }: {
+    path: string;
+    headers: Record<string, string | undefined>;
+    warnings: SharedV3Warning[];
+    description: string;
+  }) {
+    const fetch = this.config.fetch ?? globalThis.fetch;
+
+    try {
+      const filteredHeaders = Object.fromEntries(
+        Object.entries(headers).filter(([, value]) => value !== undefined),
+      ) as Record<string, string>;
+
+      const response = await fetch(
+        this.config.url({ path, modelId: this.modelId }),
+        {
+          method: 'DELETE',
+          headers: filteredHeaders,
+        },
+      );
+
+      if (!response.ok) {
+        let responseText = '';
+        try {
+          responseText = await response.text();
+        } catch {
+          responseText = '';
+        }
+
+        throw new Error(
+          `HTTP ${response.status} ${response.statusText}${responseText ? `: ${responseText}` : ''}`,
+        );
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      warnings.push({
+        type: 'other',
+        message: `Failed to auto-delete ${description}: ${message}`,
+      });
+    }
+  }
+
   async doGenerate(
     options: Parameters<TranscriptionModelV3['doGenerate']>[0],
   ): Promise<Awaited<ReturnType<TranscriptionModelV3['doGenerate']>>> {
@@ -174,163 +221,195 @@ export class SonioxTranscriptionModel implements TranscriptionModelV3 {
 
     const audioUrl = sonioxOptions?.audioUrl ?? undefined;
     const fileIdOverride = sonioxOptions?.fileId ?? undefined;
+    const autoDeleteTranscription =
+      sonioxOptions?.autoDeleteTranscription ?? true;
+    const autoDeleteFile = sonioxOptions?.autoDeleteFile ?? true;
 
     if (audioUrl && fileIdOverride) {
       throw new Error('Provide either audioUrl or fileId, not both.');
     }
 
     let fileId = fileIdOverride;
+    let transcriptionId: string | undefined;
+    const requestHeaders = combineHeaders(
+      this.config.headers(),
+      options.headers,
+    );
 
-    if (!audioUrl && !fileId) {
-      const blob =
-        options.audio instanceof Uint8Array
-          ? new Blob([options.audio as BlobPart])
-          : new Blob([convertBase64ToUint8Array(options.audio) as BlobPart]);
+    try {
+      if (!audioUrl && !fileId) {
+        const blob =
+          options.audio instanceof Uint8Array
+            ? new Blob([options.audio as BlobPart])
+            : new Blob([convertBase64ToUint8Array(options.audio) as BlobPart]);
 
-      const fileExtension = mediaTypeToExtension(options.mediaType);
-      const formData = new FormData();
-      formData.append(
-        'file',
-        new File([blob], `audio.${fileExtension}`, {
-          type: options.mediaType,
-        }),
-      );
+        const fileExtension = mediaTypeToExtension(options.mediaType);
+        const formData = new FormData();
+        formData.append(
+          'file',
+          new File([blob], `audio.${fileExtension}`, {
+            type: options.mediaType,
+          }),
+        );
 
-      const { value: uploadResponse } = await postFormDataToApi({
+        const { value: uploadResponse } = await postFormDataToApi({
+          url: this.config.url({
+            path: '/v1/files',
+            modelId: this.modelId,
+          }),
+          headers: requestHeaders,
+          formData,
+          failedResponseHandler: sonioxFailedResponseHandler,
+          successfulResponseHandler: createJsonResponseHandler(
+            sonioxUploadResponseSchema,
+          ),
+          abortSignal: options.abortSignal,
+          fetch: this.config.fetch,
+        });
+
+        fileId = uploadResponse.id;
+      }
+
+      const body: SonioxCreateTranscriptionRequest = {
+        model: this.modelId,
+        audio_url: audioUrl ?? undefined,
+        file_id: fileId ?? undefined,
+        language_hints: sonioxOptions?.languageHints ?? undefined,
+        enable_language_identification:
+          sonioxOptions?.enableLanguageIdentification ?? undefined,
+        enable_speaker_diarization:
+          sonioxOptions?.enableSpeakerDiarization ?? undefined,
+        context: this.mapContext(sonioxOptions?.context),
+        client_reference_id: sonioxOptions?.clientReferenceId ?? undefined,
+        webhook_url: sonioxOptions?.webhookUrl ?? undefined,
+        webhook_auth_header_name:
+          sonioxOptions?.webhookAuthHeaderName ?? undefined,
+        webhook_auth_header_value:
+          sonioxOptions?.webhookAuthHeaderValue ?? undefined,
+        translation: this.mapTranslation(sonioxOptions?.translation),
+      };
+
+      const { value: submitResponse } = await postJsonToApi({
         url: this.config.url({
-          path: '/v1/files',
+          path: '/v1/transcriptions',
           modelId: this.modelId,
         }),
-        headers: combineHeaders(this.config.headers(), options.headers),
-        formData,
+        headers: requestHeaders,
+        body,
         failedResponseHandler: sonioxFailedResponseHandler,
         successfulResponseHandler: createJsonResponseHandler(
-          sonioxUploadResponseSchema,
+          sonioxCreateTranscriptionResponseSchema,
         ),
         abortSignal: options.abortSignal,
         fetch: this.config.fetch,
       });
 
-      fileId = uploadResponse.id;
-    }
+      transcriptionId = submitResponse.id;
 
-    const body: SonioxCreateTranscriptionRequest = {
-      model: this.modelId,
-      audio_url: audioUrl ?? undefined,
-      file_id: fileId ?? undefined,
-      language_hints: sonioxOptions?.languageHints ?? undefined,
-      enable_language_identification:
-        sonioxOptions?.enableLanguageIdentification ?? undefined,
-      enable_speaker_diarization:
-        sonioxOptions?.enableSpeakerDiarization ?? undefined,
-      context: this.mapContext(sonioxOptions?.context),
-      client_reference_id: sonioxOptions?.clientReferenceId ?? undefined,
-      webhook_url: sonioxOptions?.webhookUrl ?? undefined,
-      webhook_auth_header_name:
-        sonioxOptions?.webhookAuthHeaderName ?? undefined,
-      webhook_auth_header_value:
-        sonioxOptions?.webhookAuthHeaderValue ?? undefined,
-      translation: this.mapTranslation(sonioxOptions?.translation),
-    };
+      const pollingInterval =
+        this.config.pollingIntervalMs ?? this.POLLING_INTERVAL_MS;
 
-    const { value: submitResponse } = await postJsonToApi({
-      url: this.config.url({
-        path: '/v1/transcriptions',
-        modelId: this.modelId,
-      }),
-      headers: combineHeaders(this.config.headers(), options.headers),
-      body,
-      failedResponseHandler: sonioxFailedResponseHandler,
-      successfulResponseHandler: createJsonResponseHandler(
-        sonioxCreateTranscriptionResponseSchema,
-      ),
-      abortSignal: options.abortSignal,
-      fetch: this.config.fetch,
-    });
+      let statusResponse: z.infer<
+        typeof sonioxTranscriptionStatusResponseSchema
+      >;
 
-    const pollingInterval =
-      this.config.pollingIntervalMs ?? this.POLLING_INTERVAL_MS;
+      while (true) {
+        if (options.abortSignal?.aborted) {
+          throw new Error('Transcription request was aborted');
+        }
 
-    let statusResponse: z.infer<typeof sonioxTranscriptionStatusResponseSchema>;
+        const { value } = await getFromApi({
+          url: this.config.url({
+            path: `/v1/transcriptions/${submitResponse.id}`,
+            modelId: this.modelId,
+          }),
+          headers: requestHeaders,
+          failedResponseHandler: sonioxFailedResponseHandler,
+          successfulResponseHandler: createJsonResponseHandler(
+            sonioxTranscriptionStatusResponseSchema,
+          ),
+          abortSignal: options.abortSignal,
+          fetch: this.config.fetch,
+        });
 
-    while (true) {
-      if (options.abortSignal?.aborted) {
-        throw new Error('Transcription request was aborted');
+        statusResponse = value;
+
+        if (statusResponse.status === 'completed') {
+          break;
+        }
+
+        if (statusResponse.status === 'error') {
+          throw new AISDKError({
+            message: `Transcription failed: ${statusResponse.error_message ?? 'Unknown error'}`,
+            name: 'TranscriptionJobFailed',
+            cause: statusResponse,
+          });
+        }
+
+        await delay(pollingInterval);
       }
 
-      const { value } = await getFromApi({
+      const {
+        value: transcriptResponse,
+        responseHeaders,
+        rawValue: rawResponse,
+      } = await getFromApi({
         url: this.config.url({
-          path: `/v1/transcriptions/${submitResponse.id}`,
+          path: `/v1/transcriptions/${submitResponse.id}/transcript`,
           modelId: this.modelId,
         }),
-        headers: combineHeaders(this.config.headers(), options.headers),
+        headers: requestHeaders,
         failedResponseHandler: sonioxFailedResponseHandler,
         successfulResponseHandler: createJsonResponseHandler(
-          sonioxTranscriptionStatusResponseSchema,
+          sonioxTranscriptResponseSchema,
         ),
         abortSignal: options.abortSignal,
         fetch: this.config.fetch,
       });
 
-      statusResponse = value;
+      const tokens = transcriptResponse.tokens ?? [];
+      const segments = this.buildSegments(tokens);
+      const language = this.getLanguageFromTokens(tokens);
 
-      if (statusResponse.status === 'completed') {
-        break;
-      }
-
-      if (statusResponse.status === 'error') {
-        throw new AISDKError({
-          message: `Transcription failed: ${statusResponse.error_message ?? 'Unknown error'}`,
-          name: 'TranscriptionJobFailed',
-          cause: statusResponse,
+      return {
+        text: transcriptResponse.text ?? '',
+        segments,
+        language,
+        durationInSeconds:
+          typeof statusResponse.audio_duration_ms === 'number'
+            ? statusResponse.audio_duration_ms / 1000
+            : undefined,
+        warnings,
+        response: {
+          timestamp: currentDate,
+          modelId: this.modelId,
+          headers: responseHeaders,
+          body: rawResponse,
+        },
+        providerMetadata: {
+          soniox: {
+            tokens,
+          },
+        },
+      };
+    } finally {
+      if (autoDeleteTranscription && transcriptionId) {
+        await this.tryDeleteResource({
+          path: `/v1/transcriptions/${transcriptionId}`,
+          headers: requestHeaders,
+          warnings,
+          description: `transcription ${transcriptionId}`,
         });
       }
 
-      await delay(pollingInterval);
+      if (autoDeleteFile && fileId) {
+        await this.tryDeleteResource({
+          path: `/v1/files/${fileId}`,
+          headers: requestHeaders,
+          warnings,
+          description: `file ${fileId}`,
+        });
+      }
     }
-
-    const {
-      value: transcriptResponse,
-      responseHeaders,
-      rawValue: rawResponse,
-    } = await getFromApi({
-      url: this.config.url({
-        path: `/v1/transcriptions/${submitResponse.id}/transcript`,
-        modelId: this.modelId,
-      }),
-      headers: combineHeaders(this.config.headers(), options.headers),
-      failedResponseHandler: sonioxFailedResponseHandler,
-      successfulResponseHandler: createJsonResponseHandler(
-        sonioxTranscriptResponseSchema,
-      ),
-      abortSignal: options.abortSignal,
-      fetch: this.config.fetch,
-    });
-
-    const tokens = transcriptResponse.tokens ?? [];
-    const segments = this.buildSegments(tokens);
-    const language = this.getLanguageFromTokens(tokens);
-
-    return {
-      text: transcriptResponse.text ?? '',
-      segments,
-      language,
-      durationInSeconds:
-        typeof statusResponse.audio_duration_ms === 'number'
-          ? statusResponse.audio_duration_ms / 1000
-          : undefined,
-      warnings,
-      response: {
-        timestamp: currentDate,
-        modelId: this.modelId,
-        headers: responseHeaders,
-        body: rawResponse,
-      },
-      providerMetadata: {
-        soniox: {
-          tokens,
-        },
-      },
-    };
   }
 }

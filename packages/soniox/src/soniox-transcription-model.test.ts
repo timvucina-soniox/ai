@@ -22,6 +22,11 @@ const server = createTestServer({
       },
     },
   },
+  'https://api.soniox.com/v1/files/file-123': {
+    response: {
+      type: 'empty',
+    },
+  },
   'https://api.soniox.com/v1/transcriptions': {},
   'https://api.soniox.com/v1/transcriptions/transcription-123': {},
   'https://api.soniox.com/v1/transcriptions/transcription-123/transcript': {},

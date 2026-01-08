@@ -83,6 +83,16 @@ export const sonioxTranscriptionProviderOptionsSchema = z.object({
    * Translation configuration for the transcription.
    */
   translation: sonioxTranslationSchema.nullish(),
+  /**
+   * Whether to delete the transcription after the transcript is fetched or fails.
+   * Defaults to true.
+   */
+  autoDeleteTranscription: z.boolean().nullish().default(true),
+  /**
+   * Whether to delete the file associated with this transcription.
+   * Defaults to true. If a `fileId` is provided, that file will be deleted too.
+   */
+  autoDeleteFile: z.boolean().nullish().default(true),
 });
 
 export type SonioxTranscriptionProviderOptions = z.infer<
